@@ -91,12 +91,8 @@
 	DetailPrint "Querying latest version of dotnet $R0 from $R1"
 
 	; Fetch latest version of the desired dotnet version
-	; todo error handling in the PS script? so we can check for errors here
-	StrCpy $R2 "Write-Host (Invoke-WebRequest -UseBasicParsing -URI $\"$R1$\").Content;"
-	!insertmacro DotNetCorePSExec $R2 $R2
+	!insertmacro GetHttpResponse $R1 $R2
 	; $R2 contains latest version, e.g. 6.0.7
-
-	; todo error handling here
 
 	; Push the result onto the stack
 	${TrimNewLines} $R2 $R2
@@ -213,18 +209,7 @@
 	StrCpy $R2 "$R2.exe"
 	
 	; Fetch runtime installer
-	; todo error handling in the PS script? so we can check for errors here
-	StrCpy $R1 "Invoke-WebRequest -UseBasicParsing -URI $\"$R1$\" -OutFile $\"$R2$\""
-	!insertmacro DotNetCorePSExec $R1 $R1
-	; $R1 contains powershell script result
-
-	${WordFind} $R1 "BlobNotFound" "E+1{" $R3
-	ifErrors +3 0
-	DetailPrint "Dotnet installer $R0 not found."
-	Goto +10
-
-	; todo error handling for PS result, verify download result
-
+	inetc::get /NOCANCEL /WEAKSECURITY "$R1" "$R2" /end 
 	
 	IfFileExists $R2 +3, 0
 	DetailPrint "Dotnet installer did not download."
@@ -277,6 +262,43 @@
 	Call DotNetCorePSExecFileFn
 	Pop ${Result}
 
+!macroend
+
+!macro GetHttpResponse Url Result
+
+	; Save registers
+	Push $R0
+	Push $R1
+
+	; Push and pop parameters so we don't have conflicts if parameters are $R#
+	Push ${Url}
+	Pop $R0 ; Version
+
+	InitPluginsDir
+	inetc::get /SILENT "$R0" "$PluginsDir\Content.txt" /END
+	ClearErrors
+	FileOpen $1 "$PluginsDir\Content.txt" r
+	IfErrors 0 +2
+	Abort "No file"
+	loop:
+		FileRead $1 $2
+		IfErrors +3
+		StrCpy $R1 $2
+		Goto loop	
+	FileClose $1
+	
+	; Push the result onto the stack
+	Push $R1
+	
+	; Restore registers
+	Exch
+	Pop $R1
+	Exch
+	Pop $R0
+
+	; Set result
+	Pop ${Result}
+	
 !macroend
 
 Function DotNetCorePSExecFn
